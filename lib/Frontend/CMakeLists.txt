@@ -1,4 +1,4 @@
-add_library(tc-frontend ONNXParser.cpp)
+add_library(tc-frontend ONNXDumper.cpp)
 
 target_link_libraries(tc-frontend
     onnx

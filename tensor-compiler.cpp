@@ -1,4 +1,5 @@
-#include "TensorCompiler/Frontend/ONNXParser.hpp"
+#include "TensorCompiler/Frontend/ONNXModel.hpp"
+#include "TensorCompiler/Frontend/ONNXDumper.hpp"
 #include <iostream>
 
 int main(const int argc, const char *const argv[]) {
@@ -8,8 +9,9 @@ int main(const int argc, const char *const argv[]) {
     }
 
     try {
-        auto parser = ONNXParser::QueryONNXParser(argv[1]);
-        parser.ParseModel();
+        auto model = ONNXModel::QueryONNXModel(argv[1]);
+        DumpVisitor dumper{std::cout};
+        model.Parse(dumper);
     } catch (const std::exception &e) {
         std::cerr << "Compilation Failed: " << e.what() << std::endl;
         return 1;
