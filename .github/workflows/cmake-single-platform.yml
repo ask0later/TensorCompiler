@@ -1,0 +1,80 @@
+# This starter workflow is for a CMake project running on a single platform. There is a different starter workflow if you need cross-platform coverage.
+# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-multi-platform.yml
+name: CMake on a single platform
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          ninja-build \
+          python3-pip \
+          g++ \
+          wget
+
+    - name: Install Conan
+      run: pip install conan
+
+    - name: Detect Conan profile
+      run: conan profile detect --force
+
+    - name: Clean build directory
+      run: rm -rf build
+
+    - name: Install Conan dependencies
+      run: |
+        conan install . -s build_type=Release --build=missing
+        conan install . -s build_type=Debug --build=missing
+
+    - name: Install LLVM/MLIR 21
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 21 || true
+        sudo apt-get update
+        sudo apt-get install -y llvm-21 llvm-21-dev libmlir-21-dev mlir-21-tools
+
+    - name: Configure Release
+      run: |
+        cmake -S . -B build/Release \
+          -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir \
+          -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm
+
+    - name: Build Release
+      run: cmake --build build/Release -j$(nproc)
+
+    - name: Run Release tests
+      run: ctest --test-dir build/Release --output-on-failure
+
+    - name: Configure Debug
+      run: |
+        cmake -S . -B build/Debug \
+          -DCMAKE_TOOLCHAIN_FILE=build/Debug/generators/conan_toolchain.cmake \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir \
+          -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm
+
+    - name: Build Debug
+      run: cmake --build build/Debug -j$(nproc)
+
+    - name: Run Debug tests
+      run: ctest --test-dir build/Debug --output-on-failure
