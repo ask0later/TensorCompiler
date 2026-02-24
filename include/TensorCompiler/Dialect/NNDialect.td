@@ -17,9 +17,7 @@ def NN_Dialect : Dialect {
   }];
   
   let cppNamespace = "::mlir::nn";
-
-  let useDefaultTypePrinterParser = 1;
-  let useDefaultAttributePrinterParser = 1;
+  let usePropertiesForAttributes = 0;
 }
 
 #endif // NN_DIALECT

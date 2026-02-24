@@ -20,7 +20,7 @@ target_link_libraries(tc-dialect PUBLIC
 
 target_include_directories(tc-dialect PUBLIC
     ${PROJECT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/../Dialect
     )
 
 add_dependencies(tc-dialect
