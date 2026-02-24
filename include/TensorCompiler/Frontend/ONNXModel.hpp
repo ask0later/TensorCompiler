@@ -3,56 +3,54 @@
 #include <fstream>
 
 class ONNXModel final {
-    const std::string_view file_name_;
-    onnx::ModelProto model_;
+  const std::string_view fileName_;
+  onnx::ModelProto model_;
 
-    ONNXModel(const std::string_view file_name) : file_name_(file_name) {
-        std::ifstream input_model(file_name_.data(), std::ios::binary);
-        if (!input_model.good()) {
-            std::string err = std::string("Failed to open file: ") + std::string(file_name_);
-            throw std::runtime_error(err);
-        }
+  ONNXModel(const std::string_view fileName) : fileName_(file_name) {
+    std::ifstream input_model(fileName_.data(), std::ios::binary);
+    if (!input_model.good())
+      throw std::runtime_error(std::string("Failed to open file: ") +
+                               std::string(fileName_));
 
-        model_.ParseFromIstream(&input_model);
-    }
+    if (!model_.ParseFromIstream(&input_model))
+      throw std::runtime_error(std::string("Failed to parse ONNX model: ") +
+                               std::string(fileName_));
+  }
 
-    void Parse(ONNXVisitor &visitor, const onnx::GraphProto &graph) {
-        visitor.Visit(graph);
-        
-        for (auto &&input : graph.input())
-            visitor.Visit(input);
+  void Parse(ONNXVisitor &visitor, const onnx::GraphProto &graph) {
+    visitor.Visit(graph);
 
-        for (auto &&output : graph.output())
-            visitor.Visit(output);
+    for (auto &&input : graph.input())
+      visitor.Visit(input);
+    for (auto &&output : graph.output())
+      visitor.Visit(output);
 
-        for (auto &&tensor : graph.initializer())
-            visitor.Visit(tensor);
-        
-        for (auto &&node : graph.node())
-            Parse(visitor, node);
-    }
+    for (auto &&tensor : graph.initializer())
+      visitor.Visit(tensor);
 
-    void Parse(ONNXVisitor &visitor, const onnx::NodeProto &node) {
-        visitor.Visit(node);
+    for (auto &&node : graph.node())
+      Parse(visitor, node);
+  }
 
-        for (auto &&attr : node.attribute())
-            visitor.Visit(attr);
-    }
+  void Parse(ONNXVisitor &visitor, const onnx::NodeProto &node) {
+    visitor.Visit(node);
+    for (auto &&attr : node.attribute())
+      visitor.Visit(attr);
+  }
 
 public:
-    static ONNXModel &QueryONNXModel(const std::string_view file_name) {
-        static ONNXModel parser{file_name};
-        return parser;
-    }
+  static ONNXModel &QueryONNXModel(const std::string_view fileName) {
+    static ONNXModel instance{fileName};
+    return instance;
+  }
 
-    void Parse(ONNXVisitor &visitor) {
-        visitor.Visit(model_);
+  void Parse(ONNXVisitor &visitor) {
+    visitor.Visit(model_);
 
-        if (model_.has_graph())
-            Parse(visitor, model_.graph());
-        else
-            throw std::runtime_error("Error: Model has no graph.");
+    if (!model_.has_graph())
+      throw std::runtime_error("Error: Model has no graph.");
 
-        visitor.Finalize(model_.graph());
-    }
+    Parse(visitor, model_.graph());
+    visitor.Finalize(model_.graph());
+  }
 };
