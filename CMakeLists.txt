@@ -29,3 +29,8 @@ add_subdirectory(lib)
 
 add_executable(tensor-compiler tensor-compiler.cpp)
 target_link_libraries(tensor-compiler PRIVATE tc-core)
+
+message(STATUS "Testing configuration")
+find_package(GTest CONFIG REQUIRED)
+enable_testing()
+add_subdirectory(tests)

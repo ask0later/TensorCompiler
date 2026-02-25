@@ -6,17 +6,6 @@ class ONNXModel final {
   const std::string_view fileName_;
   onnx::ModelProto model_;
 
-  ONNXModel(const std::string_view fileName) : fileName_(file_name) {
-    std::ifstream input_model(fileName_.data(), std::ios::binary);
-    if (!input_model.good())
-      throw std::runtime_error(std::string("Failed to open file: ") +
-                               std::string(fileName_));
-
-    if (!model_.ParseFromIstream(&input_model))
-      throw std::runtime_error(std::string("Failed to parse ONNX model: ") +
-                               std::string(fileName_));
-  }
-
   void Parse(ONNXVisitor &visitor, const onnx::GraphProto &graph) {
     visitor.Visit(graph);
 
@@ -39,9 +28,15 @@ class ONNXModel final {
   }
 
 public:
-  static ONNXModel &QueryONNXModel(const std::string_view fileName) {
-    static ONNXModel instance{fileName};
-    return instance;
+  ONNXModel(const std::string_view fileName) : fileName_(fileName) {
+    std::ifstream input_model(fileName_.data(), std::ios::binary);
+    if (!input_model.good())
+      throw std::runtime_error(std::string("Failed to open file: ") +
+                               std::string(fileName_));
+
+    if (!model_.ParseFromIstream(&input_model))
+      throw std::runtime_error(std::string("Failed to parse ONNX model: ") +
+                               std::string(fileName_));
   }
 
   void Parse(ONNXVisitor &visitor) {
