@@ -1,10 +1,11 @@
-#include "TensorCompiler/Driver/MLIRBuilder.hpp"
+#include "TensorCompiler/Converter/MLIRBuilder.hpp"
 #include "TensorCompiler/Dialect/NNDialect.hpp"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 
-static const onnx::AttributeProto *findAttr(const onnx::NodeProto &node,
+namespace tc::converter::onnx_to_high_mlir {
+static const onnx::AttributeProto *FindAttr(const onnx::NodeProto &node,
                                             std::string_view name) {
   for (const auto &attr : node.attribute())
     if (attr.name() == name)
@@ -12,45 +13,45 @@ static const onnx::AttributeProto *findAttr(const onnx::NodeProto &node,
   return nullptr;
 }
 
-static int64_t getAttrInt(const onnx::NodeProto &node, std::string_view name,
+static int64_t GetAttrInt(const onnx::NodeProto &node, std::string_view name,
                           int64_t defaultVal) {
-  const auto *a = findAttr(node, name);
+  const auto *a = FindAttr(node, name);
   return (a && a->type() == onnx::AttributeProto::INT) ? a->i() : defaultVal;
 }
 
-static float getAttrFloat(const onnx::NodeProto &node, std::string_view name,
+static float GetAttrFloat(const onnx::NodeProto &node, std::string_view name,
                           float defaultVal) {
-  const auto *a = findAttr(node, name);
+  const auto *a = FindAttr(node, name);
   return (a && a->type() == onnx::AttributeProto::FLOAT) ? a->f() : defaultVal;
 }
 
 static std::string getAttrString(const onnx::NodeProto &node,
                                  std::string_view name,
                                  std::string_view defaultVal) {
-  const auto *a = findAttr(node, name);
+  const auto *a = FindAttr(node, name);
   return (a && a->type() == onnx::AttributeProto::STRING)
              ? a->s()
              : std::string(defaultVal);
 }
 
-static llvm::SmallVector<int64_t> getAttrInts(const onnx::NodeProto &node,
+static llvm::SmallVector<int64_t> GetAttrInts(const onnx::NodeProto &node,
                                               std::string_view name,
                                               size_t fillLen = 0,
                                               int64_t fillVal = 0) {
-  const auto *a = findAttr(node, name);
+  const auto *a = FindAttr(node, name);
   if (a && a->type() == onnx::AttributeProto::INTS)
     return {a->ints().begin(), a->ints().end()};
   return llvm::SmallVector<int64_t>(fillLen, fillVal);
 }
 
-mlir::Value MLIRBuilder::findValue(const std::string &name) const {
+mlir::Value MLIRBuilder::FindValue(const std::string &name) const {
   if (name.empty())
     return mlir::Value{};
   auto it = valueMap_.find(name);
   return (it != valueMap_.end()) ? it->second : mlir::Value{};
 }
 
-mlir::Type MLIRBuilder::convertElemType(int onnx_dtype) {
+mlir::Type MLIRBuilder::ConvertElemType(int onnx_dtype) {
   switch (onnx_dtype) {
   case onnx::TensorProto::FLOAT:
     return builder_.getF32Type();
@@ -73,16 +74,16 @@ mlir::Type MLIRBuilder::convertElemType(int onnx_dtype) {
 }
 
 mlir::RankedTensorType
-MLIRBuilder::convertTensorType(int onnx_dtype, llvm::ArrayRef<int64_t> shape) {
-  return mlir::RankedTensorType::get(shape, convertElemType(onnx_dtype));
+MLIRBuilder::ConvertTensorType(int onnx_dtype, llvm::ArrayRef<int64_t> shape) {
+  return mlir::RankedTensorType::get(shape, ConvertElemType(onnx_dtype));
 }
 
 mlir::DenseElementsAttr
-MLIRBuilder::convertTensor(const onnx::TensorProto &tensor) {
+MLIRBuilder::ConvertTensor(const onnx::TensorProto &tensor) {
   llvm::SmallVector<int64_t> shape;
   for (size_t i = 0; i < tensor.dims_size(); ++i)
     shape.push_back(tensor.dims(i));
-  auto type = convertTensorType(tensor.data_type(), shape);
+  auto type = ConvertTensorType(tensor.data_type(), shape);
 
   if (tensor.float_data_size() > 0) {
     llvm::SmallVector<float> data(tensor.float_data().begin(),
@@ -125,23 +126,23 @@ MLIRBuilder::convertTensor(const onnx::TensorProto &tensor) {
 }
 
 mlir::RankedTensorType
-MLIRBuilder::convertValueInfo(const onnx::ValueInfoProto &info) {
+MLIRBuilder::ConvertValueInfo(const onnx::ValueInfoProto &info) {
   assert(info.has_type() && info.type().has_tensor_type());
   const auto &tt = info.type().tensor_type();
   llvm::SmallVector<int64_t> shape;
   if (tt.has_shape())
     for (const auto &dim : tt.shape().dim())
       shape.push_back(dim.has_dim_value() ? dim.dim_value() : -1);
-  return convertTensorType(tt.elem_type(), shape);
+  return ConvertTensorType(tt.elem_type(), shape);
 }
 
-void MLIRBuilder::buildRelu(const onnx::NodeProto &node, mlir::Location loc) {
+void MLIRBuilder::BuildRelu(const onnx::NodeProto &node, mlir::Location loc) {
   mlir::Value in = valueMap_.at(node.input(0));
   auto op = mlir::nn::ReluOp::create(builder_, loc, in.getType(), in);
   valueMap_[node.output(0)] = op.getResult();
 }
 
-void MLIRBuilder::buildAdd(const onnx::NodeProto &node, mlir::Location loc) {
+void MLIRBuilder::BuildAdd(const onnx::NodeProto &node, mlir::Location loc) {
   mlir::Value lhs = valueMap_.at(node.input(0));
   mlir::Value rhs = valueMap_.at(node.input(1));
   auto lhsTy = llvm::cast<mlir::RankedTensorType>(lhs.getType());
@@ -152,7 +153,7 @@ void MLIRBuilder::buildAdd(const onnx::NodeProto &node, mlir::Location loc) {
   valueMap_[node.output(0)] = op.getResult();
 }
 
-void MLIRBuilder::buildMul(const onnx::NodeProto &node, mlir::Location loc) {
+void MLIRBuilder::BuildMul(const onnx::NodeProto &node, mlir::Location loc) {
   mlir::Value lhs = valueMap_.at(node.input(0));
   mlir::Value rhs = valueMap_.at(node.input(1));
   auto lhsTy = llvm::cast<mlir::RankedTensorType>(lhs.getType());
@@ -163,7 +164,7 @@ void MLIRBuilder::buildMul(const onnx::NodeProto &node, mlir::Location loc) {
   valueMap_[node.output(0)] = op.getResult();
 }
 
-void MLIRBuilder::buildMatMul(const onnx::NodeProto &node, mlir::Location loc) {
+void MLIRBuilder::BuildMatMul(const onnx::NodeProto &node, mlir::Location loc) {
   mlir::Value A = valueMap_.at(node.input(0));
   mlir::Value B = valueMap_.at(node.input(1));
   auto aTy = llvm::cast<mlir::RankedTensorType>(A.getType());
@@ -175,16 +176,16 @@ void MLIRBuilder::buildMatMul(const onnx::NodeProto &node, mlir::Location loc) {
   valueMap_[node.output(0)] = op.getResult();
 }
 
-void MLIRBuilder::buildGemm(const onnx::NodeProto &node, mlir::Location loc) {
+void MLIRBuilder::BuildGemm(const onnx::NodeProto &node, mlir::Location loc) {
   mlir::Value A = valueMap_.at(node.input(0));
   mlir::Value B = valueMap_.at(node.input(1));
   mlir::Value C =
-      (node.input_size() > 2) ? findValue(node.input(2)) : mlir::Value{};
+      (node.input_size() > 2) ? FindValue(node.input(2)) : mlir::Value{};
 
-  int64_t transA = getAttrInt(node, "transA", 0);
-  int64_t transB = getAttrInt(node, "transB", 0);
-  float alpha = getAttrFloat(node, "alpha", 1.0f);
-  float beta = getAttrFloat(node, "beta", 1.0f);
+  int64_t transA = GetAttrInt(node, "transA", 0);
+  int64_t transB = GetAttrInt(node, "transB", 0);
+  float alpha = GetAttrFloat(node, "alpha", 1.0f);
+  float beta = GetAttrFloat(node, "beta", 1.0f);
 
   auto aTy = llvm::cast<mlir::RankedTensorType>(A.getType());
   auto bTy = llvm::cast<mlir::RankedTensorType>(B.getType());
@@ -199,21 +200,21 @@ void MLIRBuilder::buildGemm(const onnx::NodeProto &node, mlir::Location loc) {
   valueMap_[node.output(0)] = op.getResult();
 }
 
-void MLIRBuilder::buildConv(const onnx::NodeProto &node, mlir::Location loc) {
+void MLIRBuilder::BuildConv(const onnx::NodeProto &node, mlir::Location loc) {
   mlir::Value input = valueMap_.at(node.input(0));
   mlir::Value weight = valueMap_.at(node.input(1));
   mlir::Value bias =
-      (node.input_size() > 2) ? findValue(node.input(2)) : mlir::Value{};
+      (node.input_size() > 2) ? FindValue(node.input(2)) : mlir::Value{};
 
   auto inputTy = llvm::cast<mlir::RankedTensorType>(input.getType());
   auto weightTy = llvm::cast<mlir::RankedTensorType>(weight.getType());
 
   int64_t spatialDims = inputTy.getRank() - 2;
 
-  auto strides = getAttrInts(node, "strides", spatialDims, 1);
-  auto dilations = getAttrInts(node, "dilations", spatialDims, 1);
-  auto pads = getAttrInts(node, "pads", spatialDims * 2, 0);
-  auto group = getAttrInt(node, "group", 1);
+  auto strides = GetAttrInts(node, "strides", spatialDims, 1);
+  auto dilations = GetAttrInts(node, "dilations", spatialDims, 1);
+  auto pads = GetAttrInts(node, "pads", spatialDims * 2, 0);
+  auto group = GetAttrInt(node, "group", 1);
   auto autoPad = getAttrString(node, "auto_pad", "NOTSET");
 
   int64_t N = inputTy.getDimSize(0);
@@ -262,13 +263,13 @@ void MLIRBuilder::buildConv(const onnx::NodeProto &node, mlir::Location loc) {
   valueMap_[node.output(0)] = op.getResult();
 }
 
-void MLIRBuilder::buildTranspose(const onnx::NodeProto &node,
+void MLIRBuilder::BuildTranspose(const onnx::NodeProto &node,
                                  mlir::Location loc) {
   mlir::Value input = valueMap_.at(node.input(0));
   auto inputTy = llvm::cast<mlir::RankedTensorType>(input.getType());
   int64_t rank = inputTy.getRank();
 
-  auto perm = getAttrInts(node, "perm", 0, 0);
+  auto perm = GetAttrInts(node, "perm", 0, 0);
   if (perm.empty()) {
     perm.resize(rank);
     for (int64_t i = 0; i < rank; ++i)
@@ -304,9 +305,9 @@ void MLIRBuilder::Visit(const onnx::GraphProto &graph) {
   llvm::SmallVector<mlir::Type> inputTypes, outputTypes;
   for (const auto &in : graph.input())
     if (!initializerNames_.count(in.name()))
-      inputTypes.push_back(convertValueInfo(in));
+      inputTypes.push_back(ConvertValueInfo(in));
   for (const auto &out : graph.output())
-    outputTypes.push_back(convertValueInfo(out));
+    outputTypes.push_back(ConvertValueInfo(out));
 
   auto funcName = graph.name().empty() ? "main" : graph.name();
   auto func = mlir::func::FuncOp::create(
@@ -326,7 +327,7 @@ void MLIRBuilder::Visit(const onnx::GraphProto &graph) {
 void MLIRBuilder::Visit(const onnx::ValueInfoProto &) { /* Do nothing */ }
 
 void MLIRBuilder::Visit(const onnx::TensorProto &tensor) {
-  auto attr = convertTensor(tensor);
+  auto attr = ConvertTensor(tensor);
   auto op =
       mlir::arith::ConstantOp::create(builder_, builder_.getUnknownLoc(), attr);
   valueMap_[tensor.name()] = op.getResult();
@@ -337,19 +338,19 @@ void MLIRBuilder::Visit(const onnx::NodeProto &node) {
   const auto &opType = node.op_type();
 
   if (opType == "Relu")
-    buildRelu(node, loc);
+    BuildRelu(node, loc);
   else if (opType == "Add")
-    buildAdd(node, loc);
+    BuildAdd(node, loc);
   else if (opType == "Mul")
-    buildMul(node, loc);
+    BuildMul(node, loc);
   else if (opType == "MatMul")
-    buildMatMul(node, loc);
+    BuildMatMul(node, loc);
   else if (opType == "Gemm")
-    buildGemm(node, loc);
+    BuildGemm(node, loc);
   else if (opType == "Conv")
-    buildConv(node, loc);
+    BuildConv(node, loc);
   else if (opType == "Transpose")
-    buildTranspose(node, loc);
+    BuildTranspose(node, loc);
   else
     llvm::errs() << "[warn] Unsupported op: " << opType << "\n";
 }
@@ -362,3 +363,4 @@ void MLIRBuilder::Finalize(const onnx::GraphProto &graph) {
     outputs.push_back(valueMap_.at(graph.output(i).name()));
   mlir::func::ReturnOp::create(builder_, builder_.getUnknownLoc(), outputs);
 }
+} // namespace tc::converter::onnx_to_high_mlir

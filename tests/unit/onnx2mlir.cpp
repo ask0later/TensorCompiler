@@ -1,6 +1,6 @@
 #include "TensorCompiler/Frontend/ONNXModel.hpp"
 #include "TensorCompiler/Frontend/ONNXDumper.hpp"
-#include "TensorCompiler/Driver/MLIRBuilder.hpp"
+#include "TensorCompiler/Converter/MLIRBuilder.hpp"
 #include "TensorCompiler/Dialect/NNDialect.hpp"
 
 #include <mlir/IR/MLIRContext.h>
@@ -28,8 +28,8 @@ ONNXtoMLIR(mlir::MLIRContext &ctx, std::string_view fileName) {
       mlir::func::FuncDialect,
       mlir::nn::NNDialect>();
 
-  ONNXModel model{fileName};
-  MLIRBuilder builder(ctx);
+  tc::frontend::ONNXModel model{fileName};
+  tc::converter::onnx_to_high_mlir::MLIRBuilder builder(ctx);
   model.Parse(builder);
 
   return builder.GetModule();
