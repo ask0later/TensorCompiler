@@ -81,6 +81,17 @@ After building, you can pass an ONNX model to the compiler to generate MLIR IR:
 ```bash
 ./build/Release/tensor-compiler <model.onnx>
 ```
+By default, the computation graph is printed to stdout.
+
+---
+
+## Options
+### --graph-dot-dump
+Export the computation graph to graph.dot.
+
+### --high-dialect-dump
+Print the generated high-level MLIR dialect.
+
 ---
 
 ## Maintainer
