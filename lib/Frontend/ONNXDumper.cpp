@@ -1,5 +1,6 @@
 #include "TensorCompiler/Frontend/ONNXDumper.hpp"
 
+namespace tc::frontend::debug {
 static constexpr size_t GRAPH_PADDING = 4;
 static constexpr size_t TENSOR_PADDING = 6;
 static constexpr size_t NODE_PADDING = 6;
@@ -177,4 +178,5 @@ void DumpVisitor::Visit(const onnx::ValueInfoProto &info) {
   }
 }
 
-void DumpVisitor::Finalize(const onnx::GraphProto &) {}
+void DumpVisitor::Finalize(const onnx::GraphProto &) { /* Do nothing*/ }
+} // namespace tc::frontend::debug

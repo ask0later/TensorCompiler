@@ -1,6 +1,7 @@
 #pragma once
 #include <onnx/onnx_pb.h>
 
+namespace tc::frontend {
 class ONNXVisitor {
 public:
   virtual ~ONNXVisitor() = default;
@@ -12,3 +13,4 @@ public:
   virtual void Visit(const onnx::ValueInfoProto &info) = 0;
   virtual void Finalize(const onnx::GraphProto &graph) = 0;
 };
+} // namespace tc::frontend

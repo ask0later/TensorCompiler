@@ -1,11 +1,14 @@
 #pragma once
 #include "TensorCompiler/Frontend/ONNXVisitor.hpp"
+#include <ostream>
 
-class DumpVisitor final : public ONNXVisitor {
+namespace tc::frontend::debug {
+
+class DumpVisitor final : public tc::frontend::ONNXVisitor {
   std::ostream &os_;
 
 public:
-  DumpVisitor(std::ostream &os);
+  explicit DumpVisitor(std::ostream &os);
 
   void Visit(const onnx::ModelProto &model) override;
   void Visit(const onnx::GraphProto &graph) override;
@@ -16,3 +19,4 @@ public:
 
   void Finalize(const onnx::GraphProto &graph) override;
 };
+} // namespace tc::frontend::debug

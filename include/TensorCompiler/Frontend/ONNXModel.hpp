@@ -2,6 +2,7 @@
 #include "TensorCompiler/Frontend/ONNXVisitor.hpp"
 #include <fstream>
 
+namespace tc::frontend {
 class ONNXModel final {
   const std::string_view fileName_;
   onnx::ModelProto model_;
@@ -28,7 +29,7 @@ class ONNXModel final {
   }
 
 public:
-  ONNXModel(const std::string_view fileName) : fileName_(fileName) {
+  explicit ONNXModel(std::string_view fileName) : fileName_(fileName) {
     std::ifstream input_model(fileName_.data(), std::ios::binary);
     if (!input_model.good())
       throw std::runtime_error(std::string("Failed to open file: ") +
@@ -49,3 +50,4 @@ public:
     visitor.Finalize(model_.graph());
   }
 };
+} // namespace tc::frontend
