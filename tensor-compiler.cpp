@@ -1,4 +1,5 @@
 #include "TensorCompiler/Conversion/MLIRBuilder.hpp"
+#include "TensorCompiler/Conversion/LLVMLowering.hpp"
 #include "TensorCompiler/Dialect/NNDialect.hpp"
 #include "TensorCompiler/Frontend/GraphBuilder.hpp"
 #include "TensorCompiler/Frontend/ONNXModel.hpp"
@@ -10,6 +11,7 @@
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/IR/Module.h>
 
 #include <iostream>
 
@@ -64,6 +66,16 @@ int main(int argc, char **argv) {
       llvm::outs() << "HIR Dialect Dump:\n";
       module->print(llvm::outs());
     }
+
+    auto llvmModule = tc::conversion::lowerToLLVM(module, ctx);
+    if (!llvmModule) {
+      llvm::errs() << "Failed to lower MLIR to LLVM IR\n";
+      return 1;
+    }
+
+    llvm::outs() << "LLVM IR Dump:\n";
+    llvmModule->print(llvm::outs(), nullptr);
+    llvm::outs() << "\n";
   } catch (const std::exception &e) {
     llvm::errs() << "Compilation failed: " << e.what() << "\n";
     return 1;
