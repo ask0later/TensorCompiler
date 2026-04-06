@@ -1,13 +1,15 @@
-#include "TensorCompiler/Graph/IR.hpp"
+#include "TensorCompiler/Graph/Graph.hpp"
+#include "TensorCompiler/Graph/GraphVisitor.hpp"
 
 namespace tc::graph {
+
 EntityId Graph::AddTensor(const std::string &name, std::vector<int64_t> shape,
-                          bool is_init) {
+                          int32_t dtype, bool is_init) {
   if (auto it = tensorByName_.find(name); it != tensorByName_.end())
     return it->second;
 
   EntityId id = entities_.size();
-  TensorEntity t{id, name, shape, is_init, std::nullopt};
+  TensorEntity t{id, name, shape, is_init, dtype, std::nullopt};
   entities_.emplace_back(EntityKind::Tensor, t);
   tensorByName_[name] = id;
   return id;
@@ -32,14 +34,32 @@ Graph::AddOperation(const std::string &op, const std::string &name,
 }
 
 TensorEntity *Graph::GetTensor(EntityId id) {
-  if (entities_[id].kind != EntityKind::Tensor)
+  if (id >= entities_.size() || entities_[id].kind != EntityKind::Tensor)
     return nullptr;
   return &std::get<TensorEntity>(entities_[id].entity);
 }
 
 const TensorEntity *Graph::GetTensor(EntityId id) const {
-  if (entities_[id].kind != EntityKind::Tensor)
+  if (id >= entities_.size() || entities_[id].kind != EntityKind::Tensor)
     return nullptr;
   return &std::get<TensorEntity>(entities_[id].entity);
+}
+
+void Graph::Accept(GraphVisitor &visitor) const {
+  visitor.Visit(*this);
+  for (const auto &entity : Entities()) {
+    switch (entity.kind) {
+    case EntityKind::Tensor:
+      visitor.Visit(std::get<TensorEntity>(entity.entity));
+      break;
+    case EntityKind::Operation:
+      visitor.Visit(std::get<OperationEntity>(entity.entity));
+      break;
+    case EntityKind::Constant:
+      visitor.Visit(std::get<ConstantEntity>(entity.entity));
+      break;
+    }
+  }
+  visitor.Finalize(*this);
 }
 } // namespace tc::graph

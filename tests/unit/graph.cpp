@@ -1,33 +1,37 @@
-#include "TensorCompiler/Graph/IR.hpp"
-#include "TensorCompiler/Graph/Exporter.hpp"
+#include "TensorCompiler/Graph/Graph.hpp"
+#include "TensorCompiler/Graph/GraphDumper.hpp"
 
 #include <gtest/gtest.h>
 #include <string>
 
 using namespace tc::graph;
 
-static TensorData MakeTensorData(std::string name, std::vector<int64_t> dims) {
+static constexpr int32_t FLOAT_DTYPE = 1; // onnx::TensorProto::FLOAT
+
+static TensorData MakeTensorData(std::string name, std::vector<int64_t> dims,
+                                 int32_t dtype = FLOAT_DTYPE) {
   TensorData td;
   td.name = std::move(name);
   td.dims = std::move(dims);
+  td.dtype = dtype;
   return td;
 }
 
-template<typename T>
-const T& GetScalar(const AttrValue& v) {
+template <typename T> const T &GetScalar(const AttrValue &v) {
   return std::get<T>(std::get<AttrScalar>(v));
 }
 
 TEST(GraphEntityTest, AddTensorAndGet) {
   Graph g;
-  EntityId id = g.AddTensor("t0", {1, 2, 3}, false);
+  EntityId id = g.AddTensor("t0", {1, 2, 3}, FLOAT_DTYPE, false);
   EXPECT_GE(id, 0);
 
   TensorEntity *t = g.GetTensor(id);
   ASSERT_NE(t, nullptr);
   EXPECT_EQ(t->name, "t0");
-  EXPECT_EQ(t->shape, std::vector<int64_t>({1,2,3}));
+  EXPECT_EQ(t->shape, std::vector<int64_t>({1, 2, 3}));
   EXPECT_FALSE(t->is_initializer);
+  EXPECT_EQ(t->dtype, FLOAT_DTYPE);
 }
 
 TEST(GraphEntityTest, AddConstantAndInitializerFlag) {
@@ -36,7 +40,7 @@ TEST(GraphEntityTest, AddConstantAndInitializerFlag) {
   TensorData data = MakeTensorData("w0", {4, 4});
   g.AddConstant(data);
 
-  EntityId tId = g.AddTensor("w0", {4,4}, true);
+  EntityId tId = g.AddTensor("w0", {4, 4}, data.dtype, true);
   TensorEntity *t = g.GetTensor(tId);
   ASSERT_NE(t, nullptr);
   EXPECT_TRUE(t->is_initializer);
@@ -48,7 +52,8 @@ TEST(GraphEntityTest, AddConstantAndInitializerFlag) {
     const auto &c = std::get<ConstantEntity>(e.entity);
     if (c.data.name == "w0") {
       foundConstant = true;
-      EXPECT_EQ(c.data.dims, std::vector<int64_t>({4,4}));
+      EXPECT_EQ(c.data.dims, std::vector<int64_t>({4, 4}));
+      EXPECT_EQ(c.data.dtype, FLOAT_DTYPE);
     }
   }
 
@@ -57,9 +62,9 @@ TEST(GraphEntityTest, AddConstantAndInitializerFlag) {
 
 TEST(GraphOperationTest, AddOperationCreatesCorrectEntity) {
   Graph g;
-  EntityId a = g.AddTensor("a");
-  EntityId b = g.AddTensor("b");
-  EntityId out = g.AddTensor("out");
+  EntityId a = g.AddTensor("a", {}, FLOAT_DTYPE);
+  EntityId b = g.AddTensor("b", {}, FLOAT_DTYPE);
+  EntityId out = g.AddTensor("out", {}, FLOAT_DTYPE);
 
   std::unordered_map<std::string, AttrValue> attrs;
   attrs["alpha"] = int64_t(2);
@@ -73,7 +78,8 @@ TEST(GraphOperationTest, AddOperationCreatesCorrectEntity) {
   bool found = false;
 
   for (const auto &e : ents) {
-    if (e.kind != EntityKind::Operation) continue;
+    if (e.kind != EntityKind::Operation)
+      continue;
 
     const auto &op = std::get<OperationEntity>(e.entity);
 
@@ -101,25 +107,28 @@ TEST(GraphOperationTest, AddOperationCreatesCorrectEntity) {
 TEST(GraphExporterTest, DumpGraphIncludesConstantsAndIO) {
   Graph g;
 
-  EntityId image = g.AddTensor("image", {});
-  EntityId vec = g.AddTensor("vector", {128});
+  EntityId image = g.AddTensor("image", {}, FLOAT_DTYPE);
+  EntityId vec = g.AddTensor("vector", {128}, FLOAT_DTYPE);
 
-  TensorData conv_w = MakeTensorData("conv_w", {64,3,7,7});
+  TensorData conv_w = MakeTensorData("conv_w", {64, 3, 7, 7});
   g.AddConstant(conv_w);
-  EntityId conv_w_t = g.AddTensor("conv_w", {64,3,7,7}, true);
+  EntityId conv_w_t = g.AddTensor("conv_w", {64, 3, 7, 7}, conv_w.dtype, true);
 
   TensorData conv_b = MakeTensorData("conv_b", {64});
   g.AddConstant(conv_b);
-  EntityId conv_b_t = g.AddTensor("conv_b", {64}, true);
+  EntityId conv_b_t = g.AddTensor("conv_b", {64}, conv_b.dtype, true);
 
-  EntityId c = g.AddTensor("c");
+  EntityId c = g.AddTensor("c", {}, FLOAT_DTYPE);
   g.AddOperation("Conv", "conv1", {image, conv_w_t, conv_b_t}, {c}, {});
 
-  EntityId r = g.AddTensor("r");
+  EntityId r = g.AddTensor("r", {}, FLOAT_DTYPE);
   g.AddOperation("Relu", "relu1", {c}, {r}, {});
 
-  EntityId out = g.AddTensor("output");
+  EntityId out = g.AddTensor("output", {}, FLOAT_DTYPE);
   g.AddOperation("Identity", "out_op", {r}, {out}, {});
+
+  g.AddInput(image);
+  g.AddOutput(out);
 
   std::string dump = DumpGraph(g);
 
@@ -139,9 +148,9 @@ TEST(GraphExporterTest, DumpGraphIncludesConstantsAndIO) {
 TEST(GraphExporterTest, ToDotProducesEdges) {
   Graph g;
 
-  EntityId t0 = g.AddTensor("t0");
-  EntityId t1 = g.AddTensor("t1");
-  EntityId out = g.AddTensor("out");
+  EntityId t0 = g.AddTensor("t0", {}, FLOAT_DTYPE);
+  EntityId t1 = g.AddTensor("t1", {}, FLOAT_DTYPE);
+  EntityId out = g.AddTensor("out", {}, FLOAT_DTYPE);
 
   g.AddOperation("OpA", "opA", {t0, t1}, {out}, {});
 

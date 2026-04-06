@@ -1,8 +1,8 @@
-#include "TensorCompiler/Converter/GraphBuilder.hpp"
+#include "TensorCompiler/Frontend/GraphBuilder.hpp"
 
 #include <cstring>
 
-namespace tc::converter::onnx_to_graph {
+namespace tc::frontend {
 using tc::graph::AttrValue;
 using tc::graph::DoubleList;
 using tc::graph::EntityId;
@@ -13,6 +13,7 @@ using tc::graph::TensorData;
 TensorData GraphBuilder::ParseTensor(const onnx::TensorProto &t) {
   TensorData td;
   td.name = t.name();
+  td.dtype = t.data_type();
 
   td.dims.reserve(t.dims_size());
   for (auto d : t.dims())
@@ -74,52 +75,59 @@ AttrValue GraphBuilder::ParseAttribute(const onnx::AttributeProto &a) {
   }
 }
 
-EntityId GraphBuilder::EnsureTensor(const std::string &name,
-                                    const std::vector<int64_t> &shape) {
+EntityId
+GraphBuilder::EnsureTensor(const std::string &name,
+                           const std::vector<int64_t> &shape = {},
+                           int32_t dtype = /* onnx::TensorProto::FLOAT */ 1) {
   if (name.empty())
     return -1;
 
-  return graph_.AddTensor(name, shape, initializerNames_.count(name) != 0);
+  return graph_.AddTensor(name, shape, dtype,
+                          initializerNames_.count(name) != 0);
 }
 
 void GraphBuilder::Visit(const onnx::ModelProto &) { /* Do nothing */ }
 
 void GraphBuilder::Visit(const onnx::GraphProto &g) {
   initializerNames_.clear();
+  inputNames_.clear();
+  outputNames_.clear();
 
   for (auto &init : g.initializer())
     initializerNames_.insert(init.name());
 
   for (auto &in : g.input())
-    if (!initializerNames_.count(in.name()))
-      graph_.AddInput(EnsureTensor(in.name()));
+    inputNames_.insert(in.name());
 
   for (auto &out : g.output())
-    graph_.AddOutput(EnsureTensor(out.name()));
+    outputNames_.insert(out.name());
 }
 
 void GraphBuilder::Visit(const onnx::ValueInfoProto &value) {
-  if (!value.name().empty() && value.has_type() &&
-      value.type().has_tensor_type()) {
+  if (value.name().empty() || !value.has_type() ||
+      !value.type().has_tensor_type())
+    return;
 
-    std::vector<int64_t> shape;
+  const auto &tt = value.type().tensor_type();
+  int32_t dtype = tt.elem_type();
 
-    const auto &tt = value.type().tensor_type();
-    if (tt.has_shape()) {
-      for (auto &dim : tt.shape().dim())
-        shape.push_back(dim.has_dim_value() ? dim.dim_value() : -1);
-    }
-
-    EnsureTensor(value.name(), shape);
+  std::vector<int64_t> shape;
+  if (tt.has_shape()) {
+    for (auto &dim : tt.shape().dim())
+      shape.push_back(dim.has_dim_value() ? dim.dim_value() : -1);
   }
+
+  EntityId tid = EnsureTensor(value.name(), shape, dtype);
+
+  if (inputNames_.count(value.name()) && !initializerNames_.count(value.name()))
+    graph_.AddInput(tid);
+  if (outputNames_.count(value.name()))
+    graph_.AddOutput(tid);
 }
 
 void GraphBuilder::Visit(const onnx::TensorProto &tensor) {
   TensorData td = ParseTensor(tensor);
-
-  graph_.AddConstant(td);
-
-  EntityId tid = EnsureTensor(td.name, td.dims);
+  EntityId tid = EnsureTensor(td.name, td.dims, td.dtype);
 
   if (auto *t = graph_.GetTensor(tid)) {
     t->is_initializer = true;
@@ -153,4 +161,4 @@ void GraphBuilder::Visit(const onnx::AttributeProto &) { /* Do nothing */ }
 
 void GraphBuilder::Finalize(const onnx::GraphProto &) { /* Do nothing */ }
 
-} // namespace tc::converter::onnx_to_graph
+} // namespace tc::frontend

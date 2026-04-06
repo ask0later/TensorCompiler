@@ -1,12 +1,12 @@
 #pragma once
 #include "TensorCompiler/Frontend/ONNXVisitor.hpp"
-#include "TensorCompiler/Graph/IR.hpp"
+#include "TensorCompiler/Graph/Graph.hpp"
 
 #include <set>
 #include <string>
 #include <vector>
 
-namespace tc::converter::onnx_to_graph {
+namespace tc::frontend {
 using tc::graph::AttrValue;
 using tc::graph::EntityId;
 using tc::graph::Graph;
@@ -15,12 +15,14 @@ using tc::graph::TensorData;
 class GraphBuilder final : public tc::frontend::ONNXVisitor {
   Graph graph_;
   std::set<std::string> initializerNames_;
+  std::set<std::string> inputNames_;
+  std::set<std::string> outputNames_;
 
   TensorData ParseTensor(const onnx::TensorProto &tensor);
   AttrValue ParseAttribute(const onnx::AttributeProto &attr);
 
   EntityId EnsureTensor(const std::string &name,
-                        const std::vector<int64_t> &shape = {});
+                        const std::vector<int64_t> &shape, int32_t dtype);
 
 public:
   const Graph &GetGraph() const { return graph_; }
@@ -34,4 +36,4 @@ public:
 
   void Finalize(const onnx::GraphProto &) override;
 };
-} // namespace tc::converter::onnx_to_graph
+} // namespace tc::frontend
