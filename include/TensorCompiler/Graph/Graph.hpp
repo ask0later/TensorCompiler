@@ -7,6 +7,7 @@
 #include <vector>
 
 namespace tc::graph {
+class GraphVisitor;
 using IntList = std::vector<int64_t>;
 using DoubleList = std::vector<double>;
 using StringList = std::vector<std::string>;
@@ -15,6 +16,7 @@ struct TensorData {
   std::string name;
   std::vector<int64_t> dims;
   std::vector<uint8_t> raw_data;
+  int32_t dtype;
 };
 
 using AttrScalar = std::variant<int64_t, double, std::string, bool>;
@@ -30,6 +32,7 @@ struct TensorEntity {
   std::string name;
   std::vector<int64_t> shape;
   bool is_initializer = false;
+  int32_t dtype;
   std::optional<TensorData> data;
 };
 
@@ -51,20 +54,17 @@ struct Entity {
   EntityKind kind;
   std::variant<TensorEntity, OperationEntity, ConstantEntity> entity;
 
-  Entity(EntityKind k, OperationEntity op)
-      : kind(k), entity(std::move(op)) {}
+  Entity(EntityKind k, OperationEntity op) : kind(k), entity(std::move(op)) {}
 
-  Entity(EntityKind k, TensorEntity t)
-      : kind(k), entity(std::move(t)) {}
+  Entity(EntityKind k, TensorEntity t) : kind(k), entity(std::move(t)) {}
 
-  Entity(EntityKind k, ConstantEntity c)
-      : kind(k), entity(std::move(c)) {}
+  Entity(EntityKind k, ConstantEntity c) : kind(k), entity(std::move(c)) {}
 };
 
 class Graph {
 public:
-  EntityId AddTensor(const std::string &name, std::vector<int64_t> shape = {},
-                     bool is_init = false);
+  EntityId AddTensor(const std::string &name, std::vector<int64_t> shape,
+                     int32_t dtype, bool is_init = false);
 
   EntityId AddConstant(const TensorData &data);
 
@@ -82,6 +82,8 @@ public:
   const std::vector<EntityId> &Outputs() const { return outputs_; }
   void AddInput(EntityId id) { inputs_.push_back(id); }
   void AddOutput(EntityId id) { outputs_.push_back(id); }
+
+  void Accept(GraphVisitor &visitor) const;
 
 private:
   std::vector<EntityId> inputs_;

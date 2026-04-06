@@ -1,7 +1,7 @@
-#include "TensorCompiler/Frontend/ONNXModel.hpp"
-#include "TensorCompiler/Frontend/ONNXDumper.hpp"
-#include "TensorCompiler/Converter/MLIRBuilder.hpp"
+#include "TensorCompiler/Conversion/MLIRBuilder.hpp"
 #include "TensorCompiler/Dialect/NNDialect.hpp"
+#include "TensorCompiler/Frontend/GraphBuilder.hpp"
+#include "TensorCompiler/Frontend/ONNXModel.hpp"
 
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -13,25 +13,26 @@
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "llvm/Support/Casting.h"
 
 #include <gtest/gtest.h>
 
-static mlir::ModuleOp
-ONNXtoMLIR(mlir::MLIRContext &ctx, std::string_view fileName) {
-  ctx.loadDialect<
-      mlir::arith::ArithDialect,
-      mlir::func::FuncDialect,
-      mlir::nn::NNDialect>();
+static mlir::ModuleOp ONNXtoMLIR(mlir::MLIRContext &ctx,
+                                 std::string_view fileName) {
+  ctx.loadDialect<mlir::arith::ArithDialect, mlir::func::FuncDialect,
+                  mlir::nn::NNDialect>();
 
   tc::frontend::ONNXModel model{fileName};
-  tc::converter::onnx_to_high_mlir::MLIRBuilder builder(ctx);
-  model.Parse(builder);
+  tc::frontend::GraphBuilder graphBuilder;
+  model.Parse(graphBuilder);
+  const auto &graph = graphBuilder.GetGraph();
 
+  tc::conversion::HighLevelMLIRBuilder builder(ctx);
+  graph.Accept(builder);
   return builder.GetModule();
 }
 
@@ -58,7 +59,7 @@ TEST(ONNXtoMLIR, AddMul) {
   auto mdl = ONNXtoMLIR(ctx, "tests/data/add_mul.onnx");
   EXPECT_TRUE(mlir::succeeded(mdl.verify()));
 
-  EXPECT_TRUE(hasFunc(mdl, "AddMulGraph"));
+  EXPECT_TRUE(hasFunc(mdl, "main"));
   EXPECT_TRUE(hasOp(mdl, "nn.add"));
   EXPECT_TRUE(hasOp(mdl, "nn.mul"));
 }
@@ -68,7 +69,7 @@ TEST(ONNXtoMLIR, ConvRelu) {
   auto mdl = ONNXtoMLIR(ctx, "tests/data/conv_relu.onnx");
   EXPECT_TRUE(mlir::succeeded(mdl.verify()));
 
-  EXPECT_TRUE(hasFunc(mdl, "ConvReluGraph"));
+  EXPECT_TRUE(hasFunc(mdl, "main"));
   EXPECT_TRUE(hasOp(mdl, "nn.conv"));
   EXPECT_TRUE(hasOp(mdl, "nn.relu"));
 }
@@ -78,7 +79,7 @@ TEST(ONNXtoMLIR, MatMulRelu) {
   auto mdl = ONNXtoMLIR(ctx, "tests/data/matmul_relu.onnx");
   EXPECT_TRUE(mlir::succeeded(mdl.verify()));
 
-  EXPECT_TRUE(hasFunc(mdl, "MatMulReluGraph"));
+  EXPECT_TRUE(hasFunc(mdl, "main"));
   EXPECT_TRUE(hasOp(mdl, "nn.matmul"));
   EXPECT_TRUE(hasOp(mdl, "nn.relu"));
 }
@@ -88,7 +89,7 @@ TEST(ONNXtoMLIR, SingleRelu) {
   auto mdl = ONNXtoMLIR(ctx, "tests/data/relu.onnx");
   EXPECT_TRUE(mlir::succeeded(mdl.verify()));
 
-  EXPECT_TRUE(hasFunc(mdl, "SingleRelu"));
+  EXPECT_TRUE(hasFunc(mdl, "main"));
   EXPECT_TRUE(hasOp(mdl, "nn.relu"));
 }
 
@@ -97,7 +98,7 @@ TEST(ONNXtoMLIR, TransposeMatMul) {
   auto mdl = ONNXtoMLIR(ctx, "tests/data/transpose_matmul.onnx");
   EXPECT_TRUE(mlir::succeeded(mdl.verify()));
 
-  EXPECT_TRUE(hasFunc(mdl, "TransposeMatMulGraph"));
+  EXPECT_TRUE(hasFunc(mdl, "main"));
   EXPECT_TRUE(hasOp(mdl, "nn.transpose"));
   EXPECT_TRUE(hasOp(mdl, "nn.matmul"));
 }
@@ -107,7 +108,7 @@ TEST(ONNXtoMLIR, Gemm) {
   auto mdl = ONNXtoMLIR(ctx, "tests/data/gemm.onnx");
   EXPECT_TRUE(mlir::succeeded(mdl.verify()));
 
-  EXPECT_TRUE(hasFunc(mdl, "GemmGraph"));
+  EXPECT_TRUE(hasFunc(mdl, "main"));
   EXPECT_TRUE(hasOp(mdl, "nn.gemm"));
 }
 
@@ -116,7 +117,7 @@ TEST(ONNXtoMLIR, Pipeline) {
   auto mdl = ONNXtoMLIR(ctx, "tests/data/test_0.onnx");
   EXPECT_TRUE(mlir::succeeded(mdl.verify()));
 
-  EXPECT_TRUE(hasFunc(mdl, "PipelineGraph"));
+  EXPECT_TRUE(hasFunc(mdl, "main"));
   EXPECT_TRUE(hasOp(mdl, "nn.transpose"));
   EXPECT_TRUE(hasOp(mdl, "nn.matmul"));
   EXPECT_TRUE(hasOp(mdl, "nn.relu"));
@@ -135,18 +136,16 @@ TEST(ONNXtoMLIR, WeightsAndBias) {
   bool foundBias = false;
 
   mdl.walk([&](mlir::arith::ConstantOp cst) {
-    auto type =
-      llvm::cast<mlir::RankedTensorType>(cst.getType());
-    auto dense =
-      llvm::dyn_cast<mlir::DenseFPElementsAttr>(cst.getValue());
-    
-    ASSERT_TRUE(dense);
+    auto type = llvm::cast<mlir::RankedTensorType>(cst.getType());
+    auto dense = llvm::dyn_cast<mlir::DenseFPElementsAttr>(cst.getValue());
+    if (!dense)
+      return;
 
-    if (type.getShape() == llvm::ArrayRef<int64_t>{3,4}) {
+    if (type.getShape() == llvm::ArrayRef<int64_t>{3, 4}) {
       std::vector<float> values(dense.getValues<float>().begin(),
                                 dense.getValues<float>().end());
       for (size_t i = 0; i < 12; ++i) {
-        EXPECT_EQ(values[i], i + 1);  
+        EXPECT_EQ(values[i], static_cast<float>(i + 1));
       }
       foundWeights = true;
     }

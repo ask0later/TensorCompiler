@@ -1,7 +1,7 @@
 add_subdirectory(Dialect)
 add_subdirectory(Frontend)
 add_subdirectory(Graph)
-add_subdirectory(Converter)
+add_subdirectory(Conversion)
 
 add_library(tc-core INTERFACE)
 
@@ -10,7 +10,7 @@ target_link_libraries(tc-core
         tc-dialect
         tc-frontend
         tc-graph
-        tc-converter
+        tc-conversion
         MLIRParser
         MLIRFuncDialect
         MLIRArithDialect
